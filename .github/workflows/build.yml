@@ -85,6 +85,13 @@ jobs:
           curl -sSL https://raw.githubusercontent.com/chenmozhijin/turboacc/luci/add_turboacc.sh -o add_turboacc.sh && bash add_turboacc.sh --no-sfe
           echo "✅ TurboACC 已添加（来自 chenmozhijin，兼容 24.10）"
 
+      # ========== ZJKJU 校园网认证 ==========
+      - name: 克隆 ZJKJU 校园网认证源码
+        working-directory: ImmortalWrt
+        run: |
+          git clone https://github.com/woniuchidaodan/zjkju-auth.git package/luci-app-zjkju-auth
+          echo "✅ ZJKJU 校园网认证源码已拉取"
+
       # ========== quickstart 全家桶（从 kenzok8 源） ==========
       - name: 从 kenzok8 源拉取 quickstart 及其全部依赖
         working-directory: ImmortalWrt
