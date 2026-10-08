@@ -94,12 +94,10 @@ jobs:
           git clone https://github.com/woniuchidaodan/zjkju-auth.git package/luci-app-zjkju-auth
           cd package/luci-app-zjkju-auth
           
-          # 2. 下载作者预编译的 ipk 包
-          # 注意：如果作者以后发布了新版本，请更新下面的版本号 1.0.0-r1 和文件名
-          wget -O zjkju.ipk https://github.com/woniuchidaodan/zjkju-auth/releases/download/1.0.0-r1/luci-app-zjkju-auth.1.0.0-r1_all.ipk
+          # 2. 下载作者预编译的 ipk 包（注意版本号和文件名）
+          wget -O zjkju.ipk https://github.com/woniuchidaodan/zjkju-auth/releases/download/v1.0.0-r1-43/luci-app-zjkju-auth_1.0.0-r1_all.ipk
           
           # 3. 解压 ipk 提取 ruijie 二进制文件
-          # ipk 本质是 ar 压缩包，解压出来是 data.tar.gz
           ar x zjkju.ipk
           tar -xzf data.tar.gz ./usr/bin/ruijie
           
