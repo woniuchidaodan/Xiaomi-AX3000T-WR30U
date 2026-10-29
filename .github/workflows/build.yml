@@ -78,6 +78,14 @@ jobs:
         run: |
           git clone https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
 
+      # ========== Argon 主题及配置插件（跟随上游 master） ==========
+      - name: 克隆 Argon 主题及配置插件
+        working-directory: ImmortalWrt
+        run: |
+          git clone https://github.com/jerrykuku/luci-theme-argon.git package/luci-theme-argon
+          git clone https://github.com/jerrykuku/luci-app-argon-config.git package/luci-app-argon-config
+          echo "✅ Argon 主题及配置插件已克隆（master 分支，随上游更新）"
+
       # ========== TurboACC（来自 chenmozhijin/turboacc）==========
       - name: 添加 TurboACC 源码
         working-directory: ImmortalWrt
@@ -85,23 +93,16 @@ jobs:
           curl -sSL https://raw.githubusercontent.com/chenmozhijin/turboacc/luci/add_turboacc.sh -o add_turboacc.sh && bash add_turboacc.sh --no-sfe
           echo "✅ TurboACC 已添加（来自 chenmozhijin，兼容 24.10）"
 
-        
-      # ========== 湛江科技学院校园网认证 ==========
-      - name: 克隆并准备 ZJKJU 源码
+      # ========== 湛江科技学院校园网认证 (ZJKJU-Auth) ==========
+      - name: 克隆 ZJKJU-Auth 源码
         working-directory: ImmortalWrt
         run: |
-          # 1. 克隆源码
-          git clone https://github.com/woniuchidaodan/zjkju-auth.git package/luci-app-zjkju-auth
-          
-          # 2. 确保关键的 go.mod 文件存在（如果仓库中没有）
-          cd package/luci-app-zjkju-auth
-          if [ ! -f go.mod ]; then
-            echo "go.mod 缺失，正在创建..."
-            go mod init ruijie-auth
-            go mod tidy
-          fi
-          
-          echo "✅ ZJKJU 源码已准备就绪，将使用 OpenWrt 标准 Go 构建流程编译"
+          git clone https://github.com/woniuchidaodan/zjkju-auth.git package/zjkju-auth
+          echo "✅ ZJKJU-Auth 源码已克隆（目录名: zjkju-auth）"
+          echo "---- Makefile 包名确认 ----"
+          grep -E "PKG_NAME|LUCI_NAME" package/zjkju-auth/Makefile || true
+          echo "---- 仓库结构一览 ----"
+          ls -la package/zjkju-auth | head -n 20
 
       # ========== quickstart 全家桶（从 kenzok8 源） ==========
       - name: 从 kenzok8 源拉取 quickstart 及其全部依赖
@@ -133,7 +134,6 @@ jobs:
             echo "🔧 处理: $file"
             cp "$file" "$file.bak"
 
-            # 只删除特定包名，不破坏行尾的续行符 \，不压缩全局空格
             sed -i -E 's/\+shadow[a-z0-9-]*\b//g' "$file"
             sed -i -E 's/\+smartmontools[a-z0-9-]*\b//g' "$file"
             sed -i -E 's/\+smartd\b//g' "$file"
@@ -217,10 +217,21 @@ jobs:
             grep '^CONFIG_PACKAGE_' ../seed.config >> .config 2>/dev/null || true
           fi
 
+          # ========== 强制启用 Argon / ZJKJU / luci-compat（确保生效） ==========
+          echo "==== 强制启用 Argon 主题、配置插件、ZJKJU 认证、luci-compat ===="
+          for opt in \
+            CONFIG_PACKAGE_luci-theme-argon=y \
+            CONFIG_PACKAGE_luci-app-argon-config=y \
+            CONFIG_PACKAGE_luci-app-zjkju-auth=y \
+            CONFIG_PACKAGE_luci-compat=y \
+            CONFIG_LUCI_LANG_zh_Hans=y; do
+            key="${opt%%=*}"
+            sed -i "/^${key}=/d" .config
+            echo "$opt" >> .config
+          done
+
           # ========== 统一批量禁用 shadow、smartd、smartmontools、mdadm ==========
           echo "==== 开始批量禁用不需要的包 ===="
-          
-          # 注意：libsmartcols1 是 util-linux 的基础库，绝对不能禁用，否则会破坏系统！
           for pkg in shadow shadow-common shadow-utils shadow-chage shadow-chfn shadow-chgpasswd \
                      shadow-chpasswd shadow-chsh shadow-expiry shadow-faillog shadow-gpasswd \
                      shadow-groupadd shadow-groupdel shadow-groupmems shadow-groupmod shadow-groups \
@@ -237,10 +248,6 @@ jobs:
           sed -i '/CONFIG_SHADOW_PASSWORDS/d' .config
           echo "# CONFIG_SHADOW_PASSWORDS is not set" >> .config
 
-          # ----- 启用简体中文语言 -----
-          sed -i '/CONFIG_LUCI_LANG_zh_Hans/d' .config
-          echo "CONFIG_LUCI_LANG_zh_Hans=y" >> .config
-
           # ----- 让所有禁用和启用生效（只在这时执行一次 oldconfig） -----
           yes "" | make oldconfig
 
@@ -252,6 +259,9 @@ jobs:
           else
             echo "✅ 所有 shadow、smartd、smartmontools、mdadm 已成功禁用"
           fi
+
+          echo "==== 验证 Argon / ZJKJU 是否选中 ===="
+          grep -E "^CONFIG_PACKAGE_(luci-theme-argon|luci-app-argon-config|luci-app-zjkju-auth|luci-compat)=y" .config || true
 
           # ----- 设备校验 -----
           if ! grep -q "$DEVICE_ID" .config; then
@@ -360,11 +370,26 @@ jobs:
         run: |
           git clone https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
 
+      - name: 克隆 Argon 主题及配置插件
+        working-directory: ImmortalWrt
+        run: |
+          git clone https://github.com/jerrykuku/luci-theme-argon.git package/luci-theme-argon
+          git clone https://github.com/jerrykuku/luci-app-argon-config.git package/luci-app-argon-config
+          echo "✅ Argon 主题及配置插件已克隆（master 分支，随上游更新）"
+
       - name: 添加 TurboACC 源码
         working-directory: ImmortalWrt
         run: |
           curl -sSL https://raw.githubusercontent.com/chenmozhijin/turboacc/luci/add_turboacc.sh -o add_turboacc.sh && bash add_turboacc.sh --no-sfe
           echo "✅ TurboACC 已添加（来自 chenmozhijin，兼容 24.10）"
+
+      - name: 克隆 ZJKJU-Auth 源码
+        working-directory: ImmortalWrt
+        run: |
+          git clone https://github.com/woniuchidaodan/zjkju-auth.git package/zjkju-auth
+          echo "✅ ZJKJU-Auth 源码已克隆（目录名: zjkju-auth）"
+          echo "---- Makefile 包名确认 ----"
+          grep -E "PKG_NAME|LUCI_NAME" package/zjkju-auth/Makefile || true
 
       - name: 从 kenzok8 源拉取 quickstart 及其全部依赖
         working-directory: ImmortalWrt
@@ -395,7 +420,6 @@ jobs:
             echo "🔧 处理: $file"
             cp "$file" "$file.bak"
 
-            # 只删除特定包名，不破坏行尾的续行符 \，不压缩全局空格
             sed -i -E 's/\+shadow[a-z0-9-]*\b//g' "$file"
             sed -i -E 's/\+smartmontools[a-z0-9-]*\b//g' "$file"
             sed -i -E 's/\+smartd\b//g' "$file"
@@ -478,9 +502,19 @@ jobs:
             grep '^CONFIG_PACKAGE_' ../seed.config >> .config 2>/dev/null || true
           fi
 
-          # ========== 统一批量禁用 shadow、smartd、smartmontools、mdadm ==========
-          echo "==== 开始批量禁用不需要的包 ===="
-          
+          # 强制启用 Argon / ZJKJU / luci-compat
+          for opt in \
+            CONFIG_PACKAGE_luci-theme-argon=y \
+            CONFIG_PACKAGE_luci-app-argon-config=y \
+            CONFIG_PACKAGE_luci-app-zjkju-auth=y \
+            CONFIG_PACKAGE_luci-compat=y \
+            CONFIG_LUCI_LANG_zh_Hans=y; do
+            key="${opt%%=*}"
+            sed -i "/^${key}=/d" .config
+            echo "$opt" >> .config
+          done
+
+          # 统一批量禁用 shadow、smartd、smartmontools、mdadm
           for pkg in shadow shadow-common shadow-utils shadow-chage shadow-chfn shadow-chgpasswd \
                      shadow-chpasswd shadow-chsh shadow-expiry shadow-faillog shadow-gpasswd \
                      shadow-groupadd shadow-groupdel shadow-groupmems shadow-groupmod shadow-groups \
@@ -496,19 +530,16 @@ jobs:
           sed -i '/CONFIG_SHADOW_PASSWORDS/d' .config
           echo "# CONFIG_SHADOW_PASSWORDS is not set" >> .config
 
-          sed -i '/CONFIG_LUCI_LANG_zh_Hans/d' .config
-          echo "CONFIG_LUCI_LANG_zh_Hans=y" >> .config
-
-          # 让所有禁用和启用生效（只在这时执行一次 oldconfig）
           yes "" | make oldconfig
 
-          # 验证
           if grep -q "^CONFIG_PACKAGE_shadow.*=y" .config || grep -q "^CONFIG_PACKAGE_smartd.*=y" .config || grep -q "^CONFIG_PACKAGE_mdadm.*=y" .config; then
             echo "❌ 警告：仍有 shadow、smartd 或 mdadm 被选中！"
             grep -E "^CONFIG_PACKAGE_(shadow|smartd|smartmontools|mdadm).*=y" .config || true
           else
             echo "✅ 所有 shadow、smartd、smartmontools、mdadm 已成功禁用"
           fi
+
+          grep -E "^CONFIG_PACKAGE_(luci-theme-argon|luci-app-argon-config|luci-app-zjkju-auth|luci-compat)=y" .config || true
 
           if ! grep -q "$DEVICE_ID" .config; then
             echo "❌ 错误：设备类型 $DEVICE_ID 未正确选中！"
