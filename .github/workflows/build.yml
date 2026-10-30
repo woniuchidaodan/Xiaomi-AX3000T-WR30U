@@ -217,12 +217,11 @@ jobs:
             grep '^CONFIG_PACKAGE_' ../seed.config >> .config 2>/dev/null || true
           fi
 
-          # ========== 强制启用 Argon / ZJKJU / luci-compat（确保生效） ==========
-          echo "==== 强制启用 Argon 主题、配置插件、ZJKJU 认证、luci-compat ===="
+          # ========== 强制启用 Argon 主题 / 配置插件 / luci-compat（ZJKJU 不强制启用） ==========
+          echo "==== 强制启用 Argon 主题、配置插件、luci-compat ===="
           for opt in \
             CONFIG_PACKAGE_luci-theme-argon=y \
             CONFIG_PACKAGE_luci-app-argon-config=y \
-            CONFIG_PACKAGE_luci-app-zjkju-auth=y \
             CONFIG_PACKAGE_luci-compat=y \
             CONFIG_LUCI_LANG_zh_Hans=y; do
             key="${opt%%=*}"
@@ -260,8 +259,8 @@ jobs:
             echo "✅ 所有 shadow、smartd、smartmontools、mdadm 已成功禁用"
           fi
 
-          echo "==== 验证 Argon / ZJKJU 是否选中 ===="
-          grep -E "^CONFIG_PACKAGE_(luci-theme-argon|luci-app-argon-config|luci-app-zjkju-auth|luci-compat)=y" .config || true
+          echo "==== 验证 Argon / luci-compat 是否选中 ===="
+          grep -E "^CONFIG_PACKAGE_(luci-theme-argon|luci-app-argon-config|luci-compat)=y" .config || true
 
           # ----- 设备校验 -----
           if ! grep -q "$DEVICE_ID" .config; then
@@ -502,11 +501,10 @@ jobs:
             grep '^CONFIG_PACKAGE_' ../seed.config >> .config 2>/dev/null || true
           fi
 
-          # 强制启用 Argon / ZJKJU / luci-compat
+          # 强制启用 Argon 主题 / 配置插件 / luci-compat（ZJKJU 不强制启用）
           for opt in \
             CONFIG_PACKAGE_luci-theme-argon=y \
             CONFIG_PACKAGE_luci-app-argon-config=y \
-            CONFIG_PACKAGE_luci-app-zjkju-auth=y \
             CONFIG_PACKAGE_luci-compat=y \
             CONFIG_LUCI_LANG_zh_Hans=y; do
             key="${opt%%=*}"
@@ -539,7 +537,8 @@ jobs:
             echo "✅ 所有 shadow、smartd、smartmontools、mdadm 已成功禁用"
           fi
 
-          grep -E "^CONFIG_PACKAGE_(luci-theme-argon|luci-app-argon-config|luci-app-zjkju-auth|luci-compat)=y" .config || true
+          echo "==== 验证 Argon / luci-compat 是否选中 ===="
+          grep -E "^CONFIG_PACKAGE_(luci-theme-argon|luci-app-argon-config|luci-compat)=y" .config || true
 
           if ! grep -q "$DEVICE_ID" .config; then
             echo "❌ 错误：设备类型 $DEVICE_ID 未正确选中！"
