@@ -66,6 +66,52 @@ jobs:
           echo "==== 当前 commit ===="
           git log -1 --oneline
 
+      # >>> 新增：初始化缓存变量（源码 hash → 缓存 key）
+      - name: 初始化缓存变量
+        run: |
+          cd ImmortalWrt
+          WRT_HASH=$(git rev-parse HEAD)
+          echo "WRT_HASH=$WRT_HASH" >> $GITHUB_ENV
+          echo "CACHE_PREFIX=immortalwrt-${WRT_HASH:0:12}" >> $GITHUB_ENV
+          echo "✅ 源码 hash: $WRT_HASH"
+          echo "✅ 缓存前缀: immortalwrt-${WRT_HASH:0:12}"
+
+      # >>> 新增：恢复 dl 源码缓存（跨设备共享）
+      - name: 恢复 dl 源码缓存
+        id: cache-dl-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: ImmortalWrt/dl
+          key: immortalwrt-dl-${{ env.WRT_HASH }}
+          restore-keys: |
+            immortalwrt-dl-
+
+      # >>> 新增：恢复工具链 / host 工具 / ccache（跨设备共享）
+      - name: 恢复编译缓存
+        id: cache-build-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ImmortalWrt/.ccache
+            ImmortalWrt/staging_dir/host*
+            ImmortalWrt/staging_dir/tool*
+          key: ${{ env.CACHE_PREFIX }}-staging-${{ env.WRT_HASH }}
+          restore-keys: |
+            ${{ env.CACHE_PREFIX }}-staging-
+            immortalwrt-
+
+      # >>> 新增：刷新 stamp 时间戳 + 写 tmp/.build，让 buildroot 认为工具链已就绪
+      - name: 准备恢复的编译缓存
+        if: steps.cache-build-restore.outputs.cache-matched-key != ''
+        run: |
+          echo "命中缓存: ${{ steps.cache-build-restore.outputs.cache-matched-key }}"
+          find "ImmortalWrt/staging_dir" -type d -name "stamp" -not -path "*target*" 2>/dev/null | while read -r DIR; do
+            find "$DIR" -type f -exec touch {} +
+          done
+          mkdir -p ImmortalWrt/tmp
+          echo "1" > ImmortalWrt/tmp/.build
+          echo "✅ 已刷新 stamp 与 tmp/.build"
+
       # ========== UA3F ==========
       - name: 手动克隆 UA3F 源码
         working-directory: ImmortalWrt
@@ -103,6 +149,13 @@ jobs:
           grep -E "PKG_NAME|LUCI_NAME" package/zjkju-auth/Makefile || true
           echo "---- 仓库结构一览 ----"
           ls -la package/zjkju-auth | head -n 20
+
+      # ========== rkp-ipid（使用 githubproxy.cc 代理加速） ==========
+      - name: 克隆 rkp-ipid 源码
+        working-directory: ImmortalWrt
+        run: |
+          git clone https://githubproxy.cc/https://github.com/CHN-beta/rkp-ipid.git package/rkp-ipid
+          echo "✅ rkp-ipid 源码已克隆"
 
       # ========== quickstart 全家桶（从 kenzok8 源） ==========
       - name: 从 kenzok8 源拉取 quickstart 及其全部依赖
@@ -217,13 +270,14 @@ jobs:
             grep '^CONFIG_PACKAGE_' ../seed.config >> .config 2>/dev/null || true
           fi
 
-          # ========== 强制启用 Argon 主题 / 配置插件 / luci-compat（ZJKJU 不强制启用） ==========
-          echo "==== 强制启用 Argon 主题、配置插件、luci-compat ===="
+          # ========== 强制启用 Argon / luci-compat / ccache（ZJKJU 不强制启用） ==========
+          echo "==== 强制启用 Argon 主题、配置插件、luci-compat、ccache ===="
           for opt in \
             CONFIG_PACKAGE_luci-theme-argon=y \
             CONFIG_PACKAGE_luci-app-argon-config=y \
             CONFIG_PACKAGE_luci-compat=y \
-            CONFIG_LUCI_LANG_zh_Hans=y; do
+            CONFIG_LUCI_LANG_zh_Hans=y \
+            CONFIG_CCACHE=y; do
             key="${opt%%=*}"
             sed -i "/^${key}=/d" .config
             echo "$opt" >> .config
@@ -259,8 +313,8 @@ jobs:
             echo "✅ 所有 shadow、smartd、smartmontools、mdadm 已成功禁用"
           fi
 
-          echo "==== 验证 Argon / luci-compat 是否选中 ===="
-          grep -E "^CONFIG_PACKAGE_(luci-theme-argon|luci-app-argon-config|luci-compat)=y" .config || true
+          echo "==== 验证 Argon / luci-compat / ccache 是否选中 ===="
+          grep -E "^CONFIG_PACKAGE_(luci-theme-argon|luci-app-argon-config|luci-compat)=y|^CONFIG_CCACHE=y" .config || true
 
           # ----- 设备校验 -----
           if ! grep -q "$DEVICE_ID" .config; then
@@ -311,6 +365,27 @@ jobs:
           name: ImmortalWrt_${{ env.FW_VERSION }}_${{ env.DEVICE }}_${{ env.LAYOUT }}
           path: ImmortalWrt/bin/targets
 
+      # >>> 新增：保存 dl 源码缓存（仅 miss 时保存）
+      - name: 保存 dl 源码缓存
+        if: success() && steps.cache-dl-restore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          key: immortalwrt-dl-${{ env.WRT_HASH }}
+          path: ImmortalWrt/dl
+
+      # >>> 新增：保存工具链 / host 工具 / ccache 缓存（仅 miss 时保存）
+      - name: 保存编译缓存
+        if: success() && steps.cache-build-restore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          key: ${{ env.CACHE_PREFIX }}-staging-${{ env.WRT_HASH }}
+          path: |
+            ImmortalWrt/.ccache
+            ImmortalWrt/staging_dir/host*
+            ImmortalWrt/staging_dir/tool*
+
   # ============================================================
   # 📦 调用独立发布工作流
   # ============================================================
@@ -359,6 +434,48 @@ jobs:
           echo "==== 当前 commit ===="
           git log -1 --oneline
 
+      - name: 初始化缓存变量
+        run: |
+          cd ImmortalWrt
+          WRT_HASH=$(git rev-parse HEAD)
+          echo "WRT_HASH=$WRT_HASH" >> $GITHUB_ENV
+          echo "CACHE_PREFIX=immortalwrt-${WRT_HASH:0:12}" >> $GITHUB_ENV
+          echo "✅ 源码 hash: $WRT_HASH"
+          echo "✅ 缓存前缀: immortalwrt-${WRT_HASH:0:12}"
+
+      - name: 恢复 dl 源码缓存
+        id: cache-dl-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: ImmortalWrt/dl
+          key: immortalwrt-dl-${{ env.WRT_HASH }}
+          restore-keys: |
+            immortalwrt-dl-
+
+      - name: 恢复编译缓存
+        id: cache-build-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ImmortalWrt/.ccache
+            ImmortalWrt/staging_dir/host*
+            ImmortalWrt/staging_dir/tool*
+          key: ${{ env.CACHE_PREFIX }}-staging-${{ env.WRT_HASH }}
+          restore-keys: |
+            ${{ env.CACHE_PREFIX }}-staging-
+            immortalwrt-
+
+      - name: 准备恢复的编译缓存
+        if: steps.cache-build-restore.outputs.cache-matched-key != ''
+        run: |
+          echo "命中缓存: ${{ steps.cache-build-restore.outputs.cache-matched-key }}"
+          find "ImmortalWrt/staging_dir" -type d -name "stamp" -not -path "*target*" 2>/dev/null | while read -r DIR; do
+            find "$DIR" -type f -exec touch {} +
+          done
+          mkdir -p ImmortalWrt/tmp
+          echo "1" > ImmortalWrt/tmp/.build
+          echo "✅ 已刷新 stamp 与 tmp/.build"
+
       - name: 手动克隆 UA3F 源码
         working-directory: ImmortalWrt
         run: |
@@ -389,6 +506,12 @@ jobs:
           echo "✅ ZJKJU-Auth 源码已克隆（目录名: zjkju-auth）"
           echo "---- Makefile 包名确认 ----"
           grep -E "PKG_NAME|LUCI_NAME" package/zjkju-auth/Makefile || true
+
+      - name: 克隆 rkp-ipid 源码
+        working-directory: ImmortalWrt
+        run: |
+          git clone https://githubproxy.cc/https://github.com/CHN-beta/rkp-ipid.git package/rkp-ipid
+          echo "✅ rkp-ipid 源码已克隆"
 
       - name: 从 kenzok8 源拉取 quickstart 及其全部依赖
         working-directory: ImmortalWrt
@@ -501,18 +624,17 @@ jobs:
             grep '^CONFIG_PACKAGE_' ../seed.config >> .config 2>/dev/null || true
           fi
 
-          # 强制启用 Argon 主题 / 配置插件 / luci-compat（ZJKJU 不强制启用）
           for opt in \
             CONFIG_PACKAGE_luci-theme-argon=y \
             CONFIG_PACKAGE_luci-app-argon-config=y \
             CONFIG_PACKAGE_luci-compat=y \
-            CONFIG_LUCI_LANG_zh_Hans=y; do
+            CONFIG_LUCI_LANG_zh_Hans=y \
+            CONFIG_CCACHE=y; do
             key="${opt%%=*}"
             sed -i "/^${key}=/d" .config
             echo "$opt" >> .config
           done
 
-          # 统一批量禁用 shadow、smartd、smartmontools、mdadm
           for pkg in shadow shadow-common shadow-utils shadow-chage shadow-chfn shadow-chgpasswd \
                      shadow-chpasswd shadow-chsh shadow-expiry shadow-faillog shadow-gpasswd \
                      shadow-groupadd shadow-groupdel shadow-groupmems shadow-groupmod shadow-groups \
@@ -537,8 +659,8 @@ jobs:
             echo "✅ 所有 shadow、smartd、smartmontools、mdadm 已成功禁用"
           fi
 
-          echo "==== 验证 Argon / luci-compat 是否选中 ===="
-          grep -E "^CONFIG_PACKAGE_(luci-theme-argon|luci-app-argon-config|luci-compat)=y" .config || true
+          echo "==== 验证 Argon / luci-compat / ccache 是否选中 ===="
+          grep -E "^CONFIG_PACKAGE_(luci-theme-argon|luci-app-argon-config|luci-compat)=y|^CONFIG_CCACHE=y" .config || true
 
           if ! grep -q "$DEVICE_ID" .config; then
             echo "❌ 错误：设备类型 $DEVICE_ID 未正确选中！"
@@ -592,3 +714,22 @@ jobs:
         with:
           name: ImmortalWrt_${{ env.FW_VERSION }}_${{ env.DEVICE }}_${{ env.LAYOUT }}
           path: ImmortalWrt/bin/targets
+
+      - name: 保存 dl 源码缓存
+        if: success() && steps.cache-dl-restore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          key: immortalwrt-dl-${{ env.WRT_HASH }}
+          path: ImmortalWrt/dl
+
+      - name: 保存编译缓存
+        if: success() && steps.cache-build-restore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          key: ${{ env.CACHE_PREFIX }}-staging-${{ env.WRT_HASH }}
+          path: |
+            ImmortalWrt/.ccache
+            ImmortalWrt/staging_dir/host*
+            ImmortalWrt/staging_dir/tool*
